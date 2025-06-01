@@ -43,6 +43,8 @@ class GeneticAlgorithm:
                 distance += get_distances_map(route.locations[i].name, route.locations[i+1].name)
             fitness_values = np.append(fitness_values, distance)
 
+        fitness_values = 1000 - fitness_values
+
         return fitness_values
 
 
@@ -69,7 +71,7 @@ class GeneticAlgorithm:
         """
         fitness_values = self.maximum_route_distance_function()
         # Índice do melhor indivíduo
-        best_idx = np.argmin(fitness_values)
+        best_idx = np.argmax(fitness_values)
         self.best_individual = self.current_population[best_idx]
         self.best_fitness = fitness_values[best_idx]
         
@@ -99,7 +101,7 @@ class GeneticAlgorithm:
         # Seleciona os indivíduos para reprodução
         selected_individuals = np.random.choice(len(self.current_population), size=self.population_size, p=probabilities)
         # Retorna os indivíduos selecionados
-        return self.current_population[selected_individuals]
+        return [self.current_population[i] for i in selected_individuals]
 
     def tournament_selection(self, fitness_values):
         """
@@ -127,39 +129,83 @@ class GeneticAlgorithm:
         n = len(self.current_population)
         i = 0
         while i < n - 1: # Parar antes do último se for ímpar
-            parent1 = self.current_population[i]
-            parent2 = self.current_population[i+1]
+            
+            parent1 = self.current_population[i].locations
+            parent2 = self.current_population[i+1].locations
+
             if random.random() < self.crossover_rate:
-                pass
+
+                swap_locations = self.cycle_crossover(parent1, parent2)
+
+                child1 = parent1.copy()
+                child2 = parent2.copy()
+
+                for idx in swap_locations:
+                    child1[idx] = parent2[idx]
+                    child2[idx] = parent1[idx]
+
+                children.extend([Route(child1), Route(child2)])
+
             else:
-                children.extend([parent1, parent2])
+                children.extend([Route(parent1), Route(parent2)])
             i += 2
+
         self.current_population = np.array(children)
 
         if n % 2 == 1:
             children.append(self.current_population[-1])
         self.current_population = np.array(children)
 
+    def cycle_crossover(self, parent1, parent2):
+            
+            """
+            Realiza o crossover por ciclo.
+            """
+
+            # Pega os ids das locations
+            parent1_locations_ids = [location.id for location in parent1]
+            parent2_locations_ids = [location.id for location in parent2]
+            
+            # Remove primeiro e último elemento (que são iguais)
+            parent1_locations_ids = parent1_locations_ids[1:-1]
+            parent2_locations_ids = parent2_locations_ids[1:-1]
+            
+            # Define o array de indices de troca como uma lista
+            swap_locations = list(range(len(parent1)))
+            # Remove a fazenda, pois ela é a primeira e a última location
+            swap_locations.remove(0)
+            swap_locations.remove(21)
+            
+            # Remove o primeiro elemento, onde é que se inicia a rota
+            swap_locations.remove(1)
+
+            # Define o último id da troca
+            last_location_id = parent2_locations_ids[0]
+
+            while last_location_id != parent1_locations_ids[0]:
+                index = parent1_locations_ids.index(last_location_id)
+                swap_locations.remove(index+1)
+                last_location_id = parent2_locations_ids[index]
+
+            return swap_locations
+
     def mutation(self):
         """
         Aplica a mutação no indivíduo.
         """
+        for route in self.current_population:
+            if random.random() < self.mutation_rate:
+                # Seleciona um indivíduo aleatório da população
+                positions = random.sample(range(1, len(route.locations)-1), 2)
 
-        for idx, individual in enumerate(self.current_population):
-            for i in range(len(individual)):
-                if random.random() < self.mutation_rate:
-                    binary_individual = list(self.real_to_bin(
-                        individual[i], 
-                        self.bounds[i][0], 
-                        self.get_n_bits(self.decimal_precision)[i]
-                    ))
-                    point = random.randint(0, len(binary_individual) - 1)
-                    binary_individual[point] = '1' if binary_individual[point] == '0' else '0'
-                    binary_individual = ''.join(binary_individual)
-                    individual[i] = self.bin_to_real(binary_individual, self.bounds[i][0])
-                    individual = self.clip_individual(individual)
-                    self.current_population[idx] = individual
-        
+                #Troca as posições
+                route.locations[positions[0]], route.locations[positions[1]] = route.locations[positions[1]], route.locations[positions[0]]
+    
+    def migration(self):
+        """
+        Aplica a migração entre as populações.
+        """
+        pass
 
     def run(self, generations, update_callback=None):
         """
@@ -169,24 +215,20 @@ class GeneticAlgorithm:
         :return: O melhor indivíduo encontrado.
         """
         elite_individuals = None
-        self.current_population = self.initialize_population()
-        print(f"População inicial: {self.current_population}")
-        print(f"Aptidão da população inicial: {self.fitness()}")
-        for _ in range(generations):
+        self.initialize_population()  # Inicializa a população sem atribuir o retorno
+        for generation in range(generations):
 
             if self.stop and self.stop():
                 break
 
-            print(f"Geração {_ + 1}")
+            print(f"Geração {generation + 1}")
             
             # Calcula a aptidão de cada indivíduo, 
             fitness_values = self.fitness()
-            print(f"Aptidão da população: {fitness_values}")
-
             # Elitismo: mantém os melhores indivíduos da geração anterior
             if self.elitism_count and self.elitism_count > 0:
-                elite_indices = np.argsort(fitness_values)[-self.elitism_count:]
-                elite_individuals = self.current_population[elite_indices]
+                elite_indices = np.argsort(fitness_values)[-self.elitism_count:].tolist()
+                elite_individuals = [self.current_population[i] for i in elite_indices]
 
             # Faz a seleção, crossover e mutação
             self.selection(fitness_values)
@@ -194,28 +236,19 @@ class GeneticAlgorithm:
             self.mutation()
 
             if elite_individuals is not None:
-                new_fitness_values = self.real_function()
+                new_fitness_values = self.fitness()
                 worst_indices = np.argsort(new_fitness_values)[:self.elitism_count]
                 for i, idx in enumerate(worst_indices):
                     self.current_population[idx] = elite_individuals[i]
-
-            # Atualiza a população com os melhores indivíduos
-
-            print(f"População após a mutação e elitismo: {self.current_population}")
 
             self.fitness()
 
             if update_callback:
                 update_callback(
-                    generation=_ + 1,
+                    generation= generation + 1,
                     best_individual=self.best_individual,
                     best_fitness=self.best_fitness,
                     error=self.current_error if self.current_error is not None else 0
                 )
-
-
-            if self.max_known_value is not None and self.current_error < 1e-6:
-                print(f"Encerrando o algoritmo, pois o erro é menor que 1e-6")
-                break     
 
         return self.best_individual, self.best_fitness
