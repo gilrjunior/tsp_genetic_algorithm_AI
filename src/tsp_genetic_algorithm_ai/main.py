@@ -5,15 +5,14 @@ from distances_map import get_distances_map
 
 def main():
 
-    genetic_algorithm = GeneticAlgorithm(population_size=3, mutation_rate=0.01, crossover_rate=0.9, elitism_count=10, selection_method='roulette', tournament_size=5)
-    genetic_algorithm.initialize_population()
+    genetic_algorithm = GeneticAlgorithm(population_size=200, mutation_rate=0.2, crossover_rate=0.85, elitism_count=2, selection_method='roulette', tournament_size=5)
     
-    for route in genetic_algorithm.current_population:
-        print(route)
+    best_individual, best_fitness = genetic_algorithm.run(generations=100)
 
-    print(genetic_algorithm.fitness())
-    print(genetic_algorithm.best_individual)
-    print(genetic_algorithm.best_fitness)
+    print(f"Melhor rota: {best_individual}")
+    print(f"Melhor fitness: {best_fitness}")
+    print(f"\nLink do Google Maps para a rota:")
+    print(best_individual.get_google_maps_url())
 
 if __name__ == "__main__":
     main() 
