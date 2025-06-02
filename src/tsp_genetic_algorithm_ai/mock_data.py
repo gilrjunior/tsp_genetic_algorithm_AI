@@ -1,4 +1,4 @@
-from Location import Location
+from .Location import Location
 
 def get_mock_data() -> list[Location]:
 

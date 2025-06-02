@@ -1,4 +1,4 @@
-from Location import Location
+from .Location import Location
 import urllib.parse
 
 class Route:

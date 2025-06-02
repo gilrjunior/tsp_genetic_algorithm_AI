@@ -5,145 +5,182 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import threading
 import os
 import numpy as np
-from GeneticAlgorithm import GeneticAlgorithm
+import webbrowser
+
+from .GeneticAlgorithm import GeneticAlgorithm
 
 class Interface:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Genetic Algorithm Function Maximizer")
-        self.root.geometry("1300x900")
-        self.root.configure(bg="#F0F0F0")
-
-        # Flag para indicar se está executando
+        self.root.title("Algoritmo Genético - TSP")
+        self.root.geometry("1200x800")
+        
+        # Configuração do estilo
+        self.style = ttk.Style()
+        self.style.configure("Red.TButton", foreground="red")
+        
+        # Variáveis de controle
         self.is_running = False
         self.stop_flag = False
-        self.ga = None
-
-        self.setup_styles()
+        self.entries = {}
+        self.selection_method = tk.StringVar(value="roulette")
+        self.tournament_size = tk.StringVar(value="3")
+        
+        # Cria os frames
         self.create_frames()
+        
+        # Cria os controles
         self.create_controls()
+        
+        # Cria os gráficos
         self.create_graphs()
-
-        # Labels para mostrar informações em tempo real
-        self.generation_label = ttk.Label(self.frame_controls, text="Geração: 0", style="TLabel")
-        self.generation_label.grid(row=12, column=0, columnspan=2, padx=5, pady=5, sticky="w")
-
-        self.best_fitness_label = ttk.Label(self.frame_controls, text="Melhor Aptidão: 0", style="TLabel")
-        self.best_fitness_label.grid(row=13, column=0, columnspan=2, padx=5, pady=5, sticky="w")
-
-        self.best_individual_label = ttk.Label(self.frame_controls, text="Melhor Indivíduo: []", style="TLabel")
-        self.best_individual_label.grid(row=14, column=0, columnspan=2, padx=5, pady=5, sticky="w")
-
-        self.error_label = ttk.Label(self.frame_controls, text="Erro: 0%", style="TLabel")
-        self.error_label.grid(row=15, column=0, columnspan=2, padx=5, pady=5, sticky="w")
-
-    def setup_styles(self):
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure("TFrame", background="#F0F0F0")
-        style.configure("TLabel", background="#F0F0F0", foreground="#333333", font=("Arial", 12))
-        style.configure("Rounded.TEntry",
-                        fieldbackground="white",
-                        bordercolor="#CCCCCC",
-                        lightcolor="#CCCCCC",
-                        foreground="#000000",
-                        padding=5,
-                        borderwidth=2,
-                        relief="solid")
-        style.configure("Red.TButton",
-                        foreground="white",
-                        background="#FF0000",
-                        padding=5,
-                        borderwidth=2,
-                        relief="solid",
-                        anchor="center")
-        style.map("Red.TButton",
-            foreground=[("active", "black")],
-            background=[("active", "white")]
-        )
+        
+        # Cria os labels de status
+        self.create_status_labels()
 
     def create_frames(self):
-        self.frame_controls = ttk.Frame(self.root, padding=10, style="TFrame")
-        self.frame_controls.grid(row=0, column=0, sticky="nw", padx=10, pady=10)
-
-        self.frame_graph = ttk.Frame(self.root, padding=10, style="TFrame")
-        self.frame_graph.grid(row=0, column=1, sticky="ne", padx=10, pady=10)
-
-        self.root.grid_columnconfigure(0, weight=1)
-        self.root.grid_columnconfigure(1, weight=1)
-        self.root.grid_rowconfigure(0, weight=1)
+        # Frame principal para controles e informações
+        self.frame_left = ttk.Frame(self.root)
+        self.frame_left.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
+        
+        # Frame para controles
+        self.frame_controls = ttk.LabelFrame(self.frame_left, text="Controles", padding=10)
+        self.frame_controls.pack(fill=tk.X, pady=(0, 10))
+        
+        # Frame para status
+        self.frame_status = ttk.LabelFrame(self.frame_left, text="Status", padding=10)
+        self.frame_status.pack(fill=tk.X, pady=(0, 10))
+        
+        # Frame para informações detalhadas
+        self.frame_details = ttk.LabelFrame(self.frame_left, text="Informações Detalhadas", padding=10)
+        self.frame_details.pack(fill=tk.X)
+        
+        # Frame para gráficos
+        self.frame_graph = ttk.LabelFrame(self.root, text="Gráficos", padding=10)
+        self.frame_graph.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
     def create_controls(self):
         # Parâmetros do AG
         labels_and_defaults = [
             ("Tamanho da População:", "100"),
-            ("Probabilidade de Cruzamento:", "0.85"),
-            ("Probabilidade de Mutação:", "0.2"),
+            ("Probabilidade de Cruzamento:", "0.8"),
+            ("Probabilidade de Mutação:", "0.1"),
             ("Número de Gerações:", "100"),
-            ("Tamanho do Elitismo:", "2")
+            ("Tamanho do Elitismo:", "2"),
+            ("Número de Populações:", "3"),
+            ("Intervalo de Migração:", "10"),
+            ("Quantidade de Migrantes:", "1")
         ]
-
-        self.entries = {}
-        for idx, (text, default_value) in enumerate(labels_and_defaults):
-            lbl = ttk.Label(self.frame_controls, text=text, style="TLabel")
-            lbl.grid(row=idx, column=0, padx=5, pady=5, sticky="w")
-
-            entry = ttk.Entry(self.frame_controls, style="Rounded.TEntry", width=25)
-            entry.grid(row=idx, column=1, padx=5, pady=5, sticky="w")
-            entry.insert(0, default_value)
-            self.entries[text] = entry
-
-        # Método de Seleção
-        self.selection_method = tk.StringVar(value="roulette")
-        ttk.Label(self.frame_controls, text="Método de Seleção:", style="TLabel").grid(row=6, column=0, padx=5, pady=5, sticky="w")
-        ttk.Radiobutton(self.frame_controls, text="Roleta", variable=self.selection_method, value="roulette").grid(row=6, column=1, padx=5, pady=5, sticky="w")
-        ttk.Radiobutton(self.frame_controls, text="Torneio", variable=self.selection_method, value="tournament").grid(row=7, column=1, padx=5, pady=5, sticky="w")
-
-        # Tamanho do Torneio
-        ttk.Label(self.frame_controls, text="Tamanho do Torneio:", style="TLabel").grid(row=8, column=0, padx=5, pady=5, sticky="w")
-        self.tournament_size = ttk.Entry(self.frame_controls, style="Rounded.TEntry", width=25)
-        self.tournament_size.grid(row=8, column=1, padx=5, pady=5, sticky="w")
-        self.tournament_size.insert(0, "3")
-
-        # Tipo de Cruzamento
-        self.crossover_type = tk.StringVar(value="single_point")
-        ttk.Label(self.frame_controls, text="Tipo de Cruzamento:", style="TLabel").grid(row=9, column=0, padx=5, pady=5, sticky="w")
-        ttk.Radiobutton(self.frame_controls, text="Um Ponto", variable=self.crossover_type, value="single_point").grid(row=9, column=1, padx=5, pady=5, sticky="w")
-        ttk.Radiobutton(self.frame_controls, text="Dois Pontos", variable=self.crossover_type, value="double_point").grid(row=10, column=1, padx=5, pady=5, sticky="w")
-
-        # Botões de Controle
+        
+        for i, (label, default) in enumerate(labels_and_defaults):
+            ttk.Label(self.frame_controls, text=label).grid(row=i, column=0, padx=5, pady=5, sticky="w")
+            entry = ttk.Entry(self.frame_controls, width=10)
+            entry.insert(0, default)
+            entry.grid(row=i, column=1, padx=5, pady=5, sticky="w")
+            self.entries[label] = entry
+        
+        # Método de seleção
+        ttk.Label(self.frame_controls, text="Método de Seleção:").grid(row=len(labels_and_defaults), column=0, padx=5, pady=5, sticky="w")
+        selection_frame = ttk.Frame(self.frame_controls)
+        selection_frame.grid(row=len(labels_and_defaults), column=1, padx=5, pady=5, sticky="w")
+        
+        ttk.Radiobutton(selection_frame, text="Roleta", variable=self.selection_method, value="roulette").pack(side=tk.LEFT)
+        ttk.Radiobutton(selection_frame, text="Torneio", variable=self.selection_method, value="tournament").pack(side=tk.LEFT)
+        
+        # Tamanho do torneio
+        ttk.Label(self.frame_controls, text="Tamanho do Torneio:").grid(row=len(labels_and_defaults)+1, column=0, padx=5, pady=5, sticky="w")
+        ttk.Entry(self.frame_controls, textvariable=self.tournament_size, width=10).grid(row=len(labels_and_defaults)+1, column=1, padx=5, pady=5, sticky="w")
+        
+        # Botões
         btn_start = ttk.Button(
             self.frame_controls,
             text="Iniciar",
-            style="Red.TButton",
             command=self.start_algorithm
         )
-        btn_start.grid(row=11, column=0, padx=5, pady=10, sticky="w")
-
+        btn_start.grid(row=len(labels_and_defaults)+2, column=0, padx=5, pady=10, sticky="w")
+        
         btn_stop = ttk.Button(
             self.frame_controls,
             text="Parar",
             style="Red.TButton",
             command=self.stop_algorithm
         )
-        btn_stop.grid(row=11, column=1, padx=5, pady=10, sticky="w")
+        btn_stop.grid(row=len(labels_and_defaults)+2, column=1, padx=5, pady=10, sticky="w")
 
     def create_graphs(self):
-        # Gráfico da função
-        self.fig, self.ax = plt.subplots(figsize=(8, 6))
-        self.ax.set_title("Função e Melhor Indivíduo")
-        self.ax.set_xlabel("X")
-        self.ax.set_ylabel("Y")
+        # Cria uma grade de subplots para os gráficos
+        self.fig = plt.figure(figsize=(12, 8))
+        gs = self.fig.add_gridspec(2, 1, height_ratios=[1, 1], hspace=0.4)
+        
+        # Gráfico de fitness por população
+        self.ax1 = self.fig.add_subplot(gs[0])
+        self.ax1.set_title("Evolução do Fitness por População")
+        self.ax1.set_xlabel("Geração")
+        self.ax1.set_ylabel("Fitness")
+        self.ax1.grid(True)
+        
+        # Gráfico do melhor global
+        self.ax2 = self.fig.add_subplot(gs[1])
+        self.ax2.set_title("Melhor Fitness Global")
+        self.ax2.set_xlabel("Geração")
+        self.ax2.set_ylabel("Fitness")
+        self.ax2.grid(True)
+        
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.frame_graph)
-        self.canvas.get_tk_widget().pack()
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # Inicializa as listas para armazenar os dados dos gráficos
+        self.generations = []
+        self.population_fitnesses = []
+        self.global_fitnesses = []
+
+    def create_status_labels(self):
+        # Frame para informações básicas
+        basic_info_frame = ttk.Frame(self.frame_status)
+        basic_info_frame.pack(fill=tk.X, pady=5)
+        
+        self.generation_label = ttk.Label(basic_info_frame, text="Geração: 0")
+        self.generation_label.pack(side=tk.LEFT, padx=10)
+        
+        self.best_fitness_label = ttk.Label(basic_info_frame, text="Melhor Fitness Global: 0.0")
+        self.best_fitness_label.pack(side=tk.LEFT, padx=10)
+        
+        self.distance_label = ttk.Label(basic_info_frame, text="Distância Total: 0.0 km")
+        self.distance_label.pack(side=tk.LEFT, padx=10)
+        
+        # Frame para a rota
+        route_frame = ttk.Frame(self.frame_status)
+        route_frame.pack(fill=tk.X, pady=5)
+        
+        self.best_route_label = ttk.Label(route_frame, text="Melhor Rota: ", wraplength=300)
+        self.best_route_label.pack(side=tk.LEFT, padx=10)
+        
+        # Frame para fitness por população
+        fitness_frame = ttk.Frame(self.frame_details)
+        fitness_frame.pack(fill=tk.X, pady=5)
+        
+        self.population_fitness_labels = []
+        for i in range(3):  # Assumindo 3 populações por padrão
+            label = ttk.Label(fitness_frame, text=f"População {i+1} - Melhor Fitness: 0.0")
+            label.pack(fill=tk.X, padx=10, pady=2)
+            self.population_fitness_labels.append(label)
 
     def start_algorithm(self):
-
         if self.is_running:
             return
         
         self.is_running = True
         self.stop_flag = False
+        
+        # Limpa os gráficos
+        self.generations = []
+        self.population_fitnesses = []
+        self.global_fitnesses = []
+        self.ax1.clear()
+        self.ax1.set_title("Evolução do Fitness por População")
+        self.ax1.set_xlabel("Geração")
+        self.ax1.set_ylabel("Fitness")
+        self.ax1.grid(True)
         
         # Lê os parâmetros
         population_size = int(self.entries["Tamanho da População:"].get())
@@ -153,7 +190,9 @@ class Interface:
         elitism_size = int(self.entries["Tamanho do Elitismo:"].get())
         tournament_size = int(self.tournament_size.get())
         selection_method = self.selection_method.get()
-        crossover_type = self.crossover_type.get()
+        num_populations = int(self.entries["Número de Populações:"].get())
+        migration_interval = int(self.entries["Intervalo de Migração:"].get())
+        migration_count = int(self.entries["Quantidade de Migrantes:"].get())
 
         # Cria a instância do algoritmo genético
         self.ga = GeneticAlgorithm(
@@ -163,8 +202,9 @@ class Interface:
             elitism_count=elitism_size,
             tournament_size=tournament_size,
             selection_method=selection_method,
-            crossover_type=crossover_type,
-            decimal_precision=4,
+            num_populations=num_populations,
+            migration_interval=migration_interval,
+            migration_count=migration_count
         )
 
         # Configura o callback de parada
@@ -173,7 +213,7 @@ class Interface:
         # Inicia o algoritmo em uma thread separada
         self.algorithm_thread = threading.Thread(
             target=self.ga.run,
-            args=(generations,self.update_display),
+            args=(generations, self.update_display),
             daemon=True
         )
         self.algorithm_thread.start()
@@ -181,33 +221,66 @@ class Interface:
     def stop_algorithm(self):
         self.stop_flag = True
         self.is_running = False
+        
+        # Imprime a rota final no terminal
+        if hasattr(self, 'current_route'):
+            print("\n=== Rota Final ===")
+            print(f"Rota: {self.current_route}")
+            print(f"Distância Total: {self.current_distance:.2f} km")
+            print(f"Link do Google Maps: {self.current_route.get_google_maps_url()}")
+            print("=================\n")
 
-    def update_display(self, generation, best_individual, best_fitness, error):
+    def update_display(self, generation, best_individuals, best_fitnesses, global_best_individual, global_best_fitness):
         """Atualiza a interface com os resultados do algoritmo"""
         self.generation_label.config(text=f"Geração: {generation}")
-        self.best_fitness_label.config(text=f"Melhor Aptidão: {best_fitness:.4f}")
-        self.best_individual_label.config(text=f"Melhor Indivíduo: {best_individual}")
-        self.error_label.config(text=f"Erro: {error:.2f}%")
-
-        # Atualiza o gráfico
-        self.ax.clear()
-        self.ax.set_title("Função e Melhor Indivíduo")
-        self.ax.set_xlabel("X")
-        self.ax.set_ylabel("Y")
+        self.best_fitness_label.config(text=f"Melhor Fitness Global: {global_best_fitness:.2f}")
         
-        # Plota a função de Rastrigin
-        x = np.linspace(-3.1, 12.1, 200)
-        y = np.linspace(4.1, 5.8, 200)
-        X, Y = np.meshgrid(x, y)
-        Z = 20 + (X**2 - 10*np.cos(2*np.pi*X)) + (Y**2 - 10*np.cos(2*np.pi*Y))
+        # Atualiza os fitness por população
+        for i, fitness in enumerate(best_fitnesses):
+            if i < len(self.population_fitness_labels):
+                self.population_fitness_labels[i].config(text=f"População {i+1} - Melhor Fitness: {fitness:.2f}")
         
-        # Plota a superfície
-        self.ax.contourf(X, Y, Z, levels=20, cmap='viridis')
+        # Atualiza a rota e distância
+        if global_best_individual:
+            # Atualiza a rota
+            route_str = str(global_best_individual)
+            self.best_route_label.config(text=f"Melhor Rota: {route_str}")
+            
+            # Calcula a distância total
+            total_distance = 1000 - global_best_fitness
+            
+            self.distance_label.config(text=f"Distância Total: {total_distance:.2f} km")
+            
+            # Armazena a rota atual para impressão final
+            self.current_route = global_best_individual
+            self.current_distance = total_distance
         
-        # Plota o melhor indivíduo
-        if best_individual is not None and len(best_individual) >= 2:
-            self.ax.plot(best_individual[0], best_individual[1], 'ro', markersize=10, label='Melhor Indivíduo')
-            self.ax.legend()
+        # Atualiza os dados dos gráficos
+        self.generations.append(generation)
+        self.population_fitnesses.append(best_fitnesses)
+        self.global_fitnesses.append(global_best_fitness)
+        
+        # Atualiza o gráfico de fitness por população
+        self.ax1.clear()
+        self.ax1.set_title("Evolução do Fitness por População")
+        self.ax1.set_xlabel("Geração")
+        self.ax1.set_ylabel("Fitness")
+        self.ax1.grid(True)
+        
+        for i in range(len(best_fitnesses)):
+            population_fitness = [f[i] for f in self.population_fitnesses]
+            self.ax1.plot(self.generations, population_fitness, label=f"População {i+1}")
+        
+        self.ax1.legend()
+        
+        # Atualiza o gráfico do melhor global
+        self.ax2.clear()
+        self.ax2.set_title("Melhor Fitness Global")
+        self.ax2.set_xlabel("Geração")
+        self.ax2.set_ylabel("Fitness")
+        self.ax2.grid(True)
+        self.ax2.plot(self.generations, self.global_fitnesses, 'r-', label="Melhor Global")
+        self.ax2.legend()
         
         self.canvas.draw()
         
